@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Decentralized Donation</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.3.0/dist/ethers.min.js"></script>
+</head>
+<body style="font-family:Arial; padding:20px; background:#f9f9f9;">
+  <h2>💠 Donation DApp</h2>
+
+  <button id="connectButton">Connect MetaMask</button>
+  <p id="account"></p>
+
+  <h3>Donate ETH</h3>
+  <input id="amount" type="number" step="0.001" placeholder="Amount in ETH" />
+  <button id="donateButton">Donate</button>
+  <p id="status"></p>
+
+  <h3>Owner Actions</h3>
+  <button id="withdrawButton">Withdraw Funds</button>
+  <p id="balance"></p>
+
+  <h3>Recent Donors</h3>
+  <ul id="donorList"></ul>
+
+  <script>
+    // 🟣 Replace with your deployed contract address
+    const contractAddress = "PASTE_YOUR_CONTRACT_ADDRESS_HERE";
+
+    // 🧩 Must match the Donation.sol contract functions
+    const abi = [
+      "function donate() external payable",
+      "function withdraw() external",
+      "function getBalance() external view returns(uint)",
+      "function donorCount() view returns(uint)",
+      "function donors(uint) view returns(address,uint)",
+      "event Donated(address indexed donor, uint amount)"
+    ];
+
+    let provider, signer, contract;
+
+    // 🦊 Connect MetaMask
+    async function connect() {
+      if (window.ethereum) {
+        await ethereum.request({ method: "eth_requestAccounts" });
+        provider = new ethers.BrowserProvider(window.ethereum);
+        signer = await provider.getSigner();
+        const address = await signer.getAddress();
+        document.getElementById("account").innerText = "Connected: " + address;
+
+        contract = new ethers.Contract(contractAddress, abi, signer);
+        document.getElementById("status").innerText = "Connected successfully!";
+        loadBalance();
+        loadDonors();
+      } else {
+        alert("Please install MetaMask!");
+      }
+    }
+
+    // 💰 Send Donation
+    async function donate() {
+      const amountEth = document.getElementById("amount").value;
+      if (!amountEth || amountEth <= 0) return alert("Enter valid amount!");
+
+      try {
+        const tx = await contract.donate({ value: ethers.parseEther(amountEth) });
+        document.getElementById("status").innerText = "Transaction pending...";
+        await tx.wait();
+        document.getElementById("status").innerText = "🎉 Donation successful!";
+        document.getElementById("amount").value = "";
+        loadBalance();
+        loadDonors();
+      } catch (err) {
+        console.error(err);
+        document.getElementById("status").innerText = "❌ Transaction failed!";
+      }
+    }
+
+    // 💼 Withdraw (only for owner)
+    async function withdraw() {
+      try {
+        const tx = await contract.withdraw();
+        document.getElementById("status").innerText = "Withdrawing...";
+        await tx.wait();
+        document.getElementById("status").innerText = "✅ Withdraw successful!";
+        loadBalance();
+      } catch (e) {
+        console.error(e);
+        document.getElementById("status").innerText = "❌ Withdraw failed (only owner can do this)";
+      }
+    }
+
+    // 💸 Show current contract balance
+    async function loadBalance() {
+      if (!contract) return;
+      const bal = await contract.getBalance();
+      document.getElementById("balance").innerText =
+        "Contract Balance: " + ethers.formatEther(bal) + " ETH";
+    }
+
+    // 👥 Show donors (from mapping)
+    async function loadDonors() {
+      if (!contract) return;
+      const listEl = document.getElementById("donorList");
+      listEl.innerHTML = "";
+
+      try {
+        const count = await contract.donorCount();
+        const total = Number(count);
+
+        if (total === 0) {
+          listEl.innerHTML = "<li>No donors yet</li>";
+          return;
+        }
+
+        for (let i = total; i >= Math.max(total - 5, 1); i--) {
+          const d = await contract.donors(i);
+          const address = d[0];
+          const amount = ethers.formatEther(d[1]);
+          const item = document.createElement("li");
+          item.textContent = ${address.slice(0, 6)}...${address.slice(-4)} donated ${amount} ETH;
+          listEl.appendChild(item);
+        }
+      } catch (err) {
+        console.error("Failed to load donors:", err);
+      }
+    }
+
+    // ⚡ Auto-update on new donations
+    if (window.ethereum) {
+      window.ethereum.on("accountsChanged", () => window.location.reload());
+    }
+
+    document.getElementById("connectButton").onclick = connect;
+    document.getElementById("donateButton").onclick = donate;
+    document.getElementById("withdrawButton").onclick = withdraw;
+  </script>
+</body>
+</html>
